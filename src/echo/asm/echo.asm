@@ -11,7 +11,7 @@ global _start		; exports public label _start
     LENGTH EQU 128      ; definition constant LENGTH (buffer length)
 
 section .bss		; defines start of section of unitialized data
-    alignb 8            ; align to 8 bytes (for 64-bit machine)
+    alignb 8            ; align to 8 bytes (for 64-bit machine) -> https://www.nasm.us/xdoc/2.16.03/html/nasmdoc5.html#section-5.10.1
     BUFFER resb LENGTH  ; buffer (128 bytes)
 
 section .text		; defines start of code section
@@ -22,7 +22,7 @@ _start:			; start label
     call _read		; now calls function _read to read from console (stdin)
 
     mov rdi, BUFFER     ; copy address of variable BUFFER into register rdi
-    mov rsi, rax        ; register rax contians the number of typed char, copy value of rax into register rsi
+    mov rsi, rax        ; register rax contains the number of typed char, copy value of rax into register rsi
     call _write         ; now calls function _write to write to console (stdin)
 
     mov   rdi, 0        ; terminate program with exit 0
