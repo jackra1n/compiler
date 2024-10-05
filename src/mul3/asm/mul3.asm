@@ -10,9 +10,17 @@ global _start
 
 SECTION .data
     ; Define constants
-    CRLF        db  10, 0                  ; Line feed and null terminator
-    CRLF_LEN    equ $ - CRLF               ; Length of CRLF (1 byte)
-    ten         dq 10                      ; Constant value 10
+    CRLF        db  10                          ; Line feed
+    CRLF_LEN    equ $ - CRLF                    ; Length of CRLF (1 byte)
+    ten         dq 10                           ; Constant value 10
+
+    ; Prompt message without null terminator
+    PROMPT_MSG      db 'Please enter an integer value:', 10
+    PROMPT_MSG_LEN  equ $ - PROMPT_MSG          ; Length of prompt message
+
+    ; Result message without null terminator
+    RESULT_MSG      db 'The result of value * 3 is: '
+    RESULT_MSG_LEN  equ $ - RESULT_MSG          ; Length of result message
 
 SECTION .bss
     ; Reserve space for buffers
@@ -24,10 +32,19 @@ SECTION .bss
 SECTION .text
 
 _start:
+    ; Output prompt message before input
+    mov rdi, PROMPT_MSG                    ; Address of prompt message
+    mov rsi, PROMPT_MSG_LEN                ; Length of prompt message
+    call _write                            ; Write prompt to stdout
+
     ; Step 1: Read Input
     mov rdi, INPUT_BUFFER                  ; Address of input buffer
     mov rsi, 128                           ; Maximum bytes to read
     call _read                             ; Read from stdin
+
+    ; Optional: Null-terminate the input string
+    mov rcx, rax                           ; rax contains the number of bytes read
+    mov byte [INPUT_BUFFER + rcx], 0       ; Null-terminate the input
 
     ; Step 2: Convert String to Integer
     mov rdi, INPUT_BUFFER                  ; Address of input buffer
@@ -36,6 +53,17 @@ _start:
 
     ; Step 3: Multiply by 3
     imul rax, rax, 3                       ; Multiply RAX by 3
+
+    ; Save the result before calling _write
+    push rax                               ; Save RAX (result) on the stack
+
+    ; Output the result message
+    mov rdi, RESULT_MSG                    ; Address of result message
+    mov rsi, RESULT_MSG_LEN                ; Length of result message
+    call _write                            ; Write result message to stdout
+
+    ; Restore the result after _write
+    pop rax                                ; Restore RAX (result)
 
     ; Step 4: Convert Integer to String
     mov rdi, OUTPUT_BUFFER                 ; Address of output buffer
@@ -64,6 +92,15 @@ string_to_int:
     ; Read first character
     mov bl, [rdi + rcx]            ; Get first character
 
+    ; Skip leading whitespace (optional)
+.skip_whitespace:
+    cmp bl, ' '
+    jne .check_sign
+    inc rcx
+    mov bl, [rdi + rcx]
+    jmp .skip_whitespace
+
+.check_sign:
     ; Check for leading '+' or '-'
     cmp bl, '-'
     je st_neg
@@ -73,8 +110,10 @@ string_to_int:
 st_num:
     ; Parse digits
 st_parse:
-    ; Check for newline or null terminator
+    ; Check for newline, carriage return, or null terminator
     cmp bl, 10                     ; Newline
+    je st_done
+    cmp bl, 13                     ; Carriage return
     je st_done
     cmp bl, 0                      ; Null terminator
     je st_done
