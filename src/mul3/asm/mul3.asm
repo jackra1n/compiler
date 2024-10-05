@@ -9,166 +9,171 @@ extern _exit
 global _start
 
 SECTION .data
-    ; Define carriage return and line feed
-    CRLF        db  10, 0          ; Line feed and null terminator
-    CRLF_LEN    equ $ - CRLF       ; Length of CRLF (1 byte)
-
-    ten         dq 10              ; Constant value 10
+    ; Define constants
+    CRLF        db  10, 0                  ; Line feed and null terminator
+    CRLF_LEN    equ $ - CRLF               ; Length of CRLF (1 byte)
+    ten         dq 10                      ; Constant value 10
 
 SECTION .bss
     ; Reserve space for buffers
     alignb 8
-    INPUT_BUFFER    resb 128       ; Buffer for user input
-    OUTPUT_BUFFER   resb 128       ; Buffer for output
+    INPUT_BUFFER    resb 128               ; Buffer for user input
+    OUTPUT_BUFFER   resb 128               ; Buffer for output
+    TEMP_BUFFER     resb 128               ; Temporary buffer for digits
 
 SECTION .text
 
 _start:
     ; Step 1: Read Input
-    mov rdi, INPUT_BUFFER          ; Address of input buffer
-    mov rsi, 128                   ; Maximum bytes to read
-    call _read                     ; Read from stdin
-    mov rbx, rax                   ; Save the number of bytes read
+    mov rdi, INPUT_BUFFER                  ; Address of input buffer
+    mov rsi, 128                           ; Maximum bytes to read
+    call _read                             ; Read from stdin
 
     ; Step 2: Convert String to Integer
-    mov rdi, INPUT_BUFFER          ; Address of input buffer
-    call string_to_int             ; Convert input string to integer
+    mov rdi, INPUT_BUFFER                  ; Address of input buffer
+    call string_to_int                     ; Convert input string to integer
     ; Result is in RAX
 
     ; Step 3: Multiply by 3
-    imul rax, rax, 3               ; Multiply RAX by 3
+    imul rax, rax, 3                       ; Multiply RAX by 3
 
     ; Step 4: Convert Integer to String
-    mov rdi, OUTPUT_BUFFER         ; Address of output buffer
-    call int_to_string             ; Convert integer to string
+    mov rdi, OUTPUT_BUFFER                 ; Address of output buffer
+    call int_to_string                     ; Convert integer to string
     ; RAX contains the length of the output string
 
     ; Step 5: Write Output
-    mov rdi, OUTPUT_BUFFER         ; Address of output buffer
-    mov rsi, rax                   ; Length of the output string
-    call _write                    ; Write to stdout
+    mov rdi, OUTPUT_BUFFER                 ; Address of output buffer
+    mov rsi, rax                           ; Length of the output string
+    call _write                            ; Write to stdout
 
     ; Write a newline
-    mov rdi, CRLF                  ; Address of CRLF
-    mov rsi, CRLF_LEN              ; Length of CRLF
-    call _write                    ; Write newline to stdout
+    mov rdi, CRLF                          ; Address of CRLF
+    mov rsi, CRLF_LEN                      ; Length of CRLF
+    call _write                            ; Write newline to stdout
 
     ; Step 6: Exit
-    mov rdi, 0                     ; Exit code 0
-    call _exit                     ; Terminate the program
+    mov rdi, 0                             ; Exit code 0
+    call _exit                             ; Terminate the program
 
 string_to_int:
     xor rax, rax                   ; Clear RAX (result)
     xor rcx, rcx                   ; Index register
-    xor rsi, rsi                   ; Sign flag (0 = positive, 1 = negative)
+    xor r9, r9                     ; Sign flag (0 = positive, 1 = negative)
+
+    ; Read first character
+    mov bl, [rdi + rcx]            ; Get first character
 
     ; Check for leading '+' or '-'
-    mov bl, [rdi + rcx]            ; Get first character
     cmp bl, '-'
-    je negative_number
+    je st_neg
     cmp bl, '+'
-    je positive_number
+    je st_pos
 
-    ; If no sign, continue parsing digits
-parse_digits:
+st_num:
+    ; Parse digits
+st_parse:
     ; Check for newline or null terminator
     cmp bl, 10                     ; Newline
-    je convert_done
+    je st_done
     cmp bl, 0                      ; Null terminator
-    je convert_done
+    je st_done
 
     ; Check if character is a digit
     cmp bl, '0'
-    jb invalid_input
+    jb st_invalid
     cmp bl, '9'
-    ja invalid_input
+    ja st_invalid
 
     ; Convert ASCII digit to integer
     sub bl, '0'                    ; Convert ASCII to digit (0-9)
     imul rax, rax, 10              ; Multiply current result by 10
-    add rax, rbx                   ; Add digit to result
+    movzx rdx, bl                  ; Move digit to rdx
+    add rax, rdx                   ; Add digit to result
 
     ; Move to next character
     inc rcx
     mov bl, [rdi + rcx]
-    jmp parse_digits
+    jmp st_parse
 
-negative_number:
-    mov rsi, 1                     ; Set sign flag to negative
+st_neg:
+    mov r9, 1                      ; Set sign flag to negative
     inc rcx                        ; Move to next character
     mov bl, [rdi + rcx]
-    jmp parse_digits
+    jmp st_num
 
-positive_number:
-    ; Sign flag is already zero (positive)
+st_pos:
     inc rcx                        ; Move to next character
     mov bl, [rdi + rcx]
-    jmp parse_digits
+    jmp st_num
 
-convert_done:
-    cmp rsi, 1                     ; Check if number is negative
-    jne string_to_int_done
+st_done:
+    cmp r9, 1                      ; Check if number is negative
+    jne st_end
     neg rax                        ; Negate RAX to make it negative
-string_to_int_done:
+
+st_end:
     ret
 
-invalid_input:
-    ; Handle invalid input by setting RAX to 0
-    xor rax, rax
+st_invalid:
+    xor rax, rax                   ; Invalid input, set result to 0
     ret
 
 int_to_string:
-    push rbp                       ; Preserve base pointer
-    mov rbp, rsp                   ; Set stack frame
-    sub rsp, 16                    ; Allocate space on stack
+    ; rax: number to convert
+    ; rdi: output buffer
 
+    ; Save callee-saved registers
+    push rbp
+    mov rbp, rsp
+
+    lea rsi, [TEMP_BUFFER + 128]   ; Point RSI to the end of TEMP_BUFFER
     xor rcx, rcx                   ; Digit count
-    mov rbx, rax                   ; Copy the integer to RBX
 
-    ; Check for zero
+    ; Check if zero
     cmp rax, 0
-    jne int_to_string_process
+    jne its_process
 
     ; Handle zero separately
     mov byte [rdi], '0'
     mov rax, 1                     ; Length of the string
-    jmp int_to_string_done
+    jmp its_done
 
-int_to_string_process:
+its_process:
     ; Check if number is negative
-    mov rsi, 0                     ; Sign flag (0 = positive, 1 = negative)
+    xor r10, r10                   ; Sign flag (0 = positive, 1 = negative)
     cmp rax, 0
-    jge int_to_string_loop         ; If number >= 0, continue
-    mov rsi, 1                     ; Set sign flag to negative
+    jge its_loop                   ; If number >= 0, continue
+    mov r10, 1                     ; Set sign flag to negative
     neg rax                        ; Make RAX positive
 
-int_to_string_loop:
+its_loop:
     xor rdx, rdx                   ; Clear RDX for division
     div qword [ten]                ; Divide RAX by 10
     add rdx, '0'                   ; Convert remainder to ASCII
-    push rdx                       ; Push digit onto stack
+
+    dec rsi                        ; Move pointer backward
+    mov [rsi], dl                  ; Store digit in TEMP_BUFFER
     inc rcx                        ; Increment digit count
+
     cmp rax, 0                     ; Check if quotient is zero
-    jne int_to_string_loop         ; Continue if not zero
+    jne its_loop                   ; Continue if not zero
 
-    ; If negative, add '-' to output
-    cmp rsi, 1
-    jne output_digits
-    mov byte [rdi], '-'            ; Add '-' sign
-    inc rdi                        ; Move to next position
+    ; If negative, add '-' to temp buffer
+    cmp r10, 1                     ; Check sign flag
+    jne its_copy
+    dec rsi                        ; Move pointer backward
+    mov byte [rsi], '-'            ; Store '-' in TEMP_BUFFER
     inc rcx                        ; Increment digit count
 
-output_digits:
-    ; Pop digits from stack to output buffer
+its_copy:
+    ; Now copy digits from TEMP_BUFFER to output buffer
     mov rax, rcx                   ; Return length in RAX
-output_digits_loop:
-    pop rdx                        ; Get digit from stack
-    mov [rdi], dl                  ; Write digit to output buffer
-    inc rdi                        ; Move to next position
-    loop output_digits_loop        ; Repeat for all digits
+    cld                            ; Clear direction flag for forward copying
+    rep movsb                      ; Copy RCX bytes from [RSI] to [RDI]
 
-int_to_string_done:
-    add rsp, 16                    ; Clean up stack
-    pop rbp                        ; Restore base pointer
+its_done:
+    ; Restore callee-saved registers
+    mov rsp, rbp
+    pop rbp
     ret
-
