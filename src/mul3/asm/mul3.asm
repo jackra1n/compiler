@@ -1,68 +1,120 @@
-DEFAULT REL        ; enables RIP-relative addressing
+DEFAULT REL		; Define relative addresses
 
+; Import the required external symbols
 extern _read
 extern _write
 extern _exit
 
-global _start      ; exports public label _start
+; Export entry point
+global _start
 
-    LENGTH EQU 128      ; definition constant LENGTH (buffer length)
+SECTION .data
+    ; Define carriage return and line feed
+    CRLF        db  10, 0      ; Line feed and null terminator
+    CRLF_LEN    equ $ - CRLF   ; Length of CRLF (1 byte)
 
-section .bss
-    alignb 8               ; align to 8 bytes for 64-bit system
-    BUFFER resb LENGTH     ; buffer to hold input (128 bytes)
+SECTION .bss
+    ; Reserve space for buffers
+    alignb 8
+    INPUT_BUFFER    resb 128    ; Buffer for user input
+    OUTPUT_BUFFER   resb 128    ; Buffer for output
 
-section .text
+SECTION .text
 
 _start:
-    ; Call _read to get input from stdin
-    mov rdi, BUFFER             ; file descriptor (0 = stdin)
-    mov rsi, LENGTH        ; address of BUFFER to store input
-    call _read             ; call _read function (reads into BUFFER)
+    ; Step 1: Read Input
+    mov rdi, INPUT_BUFFER      ; Address of input buffer
+    mov rsi, 128               ; Maximum bytes to read
+    call _read                 ; Read from stdin
+    mov rbx, rax               ; Save the number of bytes read
 
-    ; Check if no input was read
-    test rax, rax          ; check if rax (number of bytes read) is zero
-    jz .exit               ; if no bytes were read, exit the program
+    ; Step 2: Convert String to Integer
+    mov rdi, INPUT_BUFFER      ; Address of input buffer
+    call string_to_int         ; Convert input string to integer
+    ; Result is in RAX
 
-    ; Process each character from BUFFER
-    xor rbx, rbx           ; clear index register (rbx will be our index)
-.loop_start:
-    mov rdi, BUFFER        ; load the address of BUFFER
-    add rdi, rbx           ; rdi points to the current character (BUFFER[rbx])
-    movzx rax, byte [rdi]  ; move the current character into rax and zero-extend
+    ; Step 3: Multiply by 3
+    imul rax, rax, 3           ; Multiply RAX by 3
 
-    ; Check if we reached the end of the string (newline or null terminator)
-    cmp rax, 10            ; check if we hit newline character (ASCII 10)
-    je .end_loop           ; if yes, end the loop
-    cmp rax, 0             ; check if it's a null terminator (ASCII 0)
-    je .end_loop           ; if yes, end the loop
+    ; Step 4: Convert Integer to String
+    mov rdi, OUTPUT_BUFFER     ; Address of output buffer
+    call int_to_string         ; Convert integer to string
+    ; RAX contains the length of the output string
 
-    ; Check if the character is a digit ('0' to '9')
-    cmp rax, '0'
-    jl .skip_char          ; if less than '0', skip (not a digit)
-    cmp rax, '9'
-    jg .skip_char          ; if greater than '9', skip (not a digit)
+    ; Step 5: Write Output
+    mov rdi, OUTPUT_BUFFER     ; Address of output buffer
+    mov rsi, rax               ; Length of the output string
+    call _write                ; Write to stdout
 
-    ; Convert the ASCII character to integer and multiply by 3
-    sub rax, '0'           ; convert ASCII to integer
-    imul rax, 3       ; multiply the number by 3
-    add rax, '0'           ; convert back to ASCII
+    ; Write a newline
+    mov rdi, CRLF              ; Address of CRLF
+    mov rsi, CRLF_LEN          ; Length of CRLF
+    call _write                ; Write newline to stdout
 
-    ; Store the result back in BUFFER at the same position
-    mov [rdi], al          ; store the result
+    ; Step 6: Exit
+    mov rdi, 0                 ; Exit code 0
+    call _exit                 ; Terminate the program
 
-.skip_char:
-    ; Move to the next character
-    inc rbx                ; increment index
-    jmp .loop_start        ; repeat the loop
 
-.end_loop:
-    ; Call _write to output the result to stdout
-    mov rdi, BUFFER             ; file descriptor (1 = stdout)
-    mov rsi, rbx        ; address of BUFFER with result
-    call _write            ; call _write function (writes BUFFER content to stdout)
+string_to_int:
+    xor rax, rax               ; Clear RAX (result)
+    xor rcx, rcx               ; Index register
 
-.exit:
-    ; Call _exit to terminate the program
-    mov rdi, 0             ; return code 0
-    call _exit             ; call _exit to exit the program
+convert_loop:
+    mov bl, [rdi + rcx]        ; Get character from input buffer
+    cmp bl, 10                 ; Check for newline (ASCII 10)
+    je convert_done            ; If newline, end conversion
+    cmp bl, '0'                ; Check if character is '0' or higher
+    jb invalid_input           ; If less, invalid input
+    cmp bl, '9'                ; Check if character is '9' or lower
+    ja invalid_input           ; If greater, invalid input
+
+    sub bl, '0'                ; Convert ASCII to digit
+    imul rax, rax, 10          ; Multiply current result by 10
+    add rax, rbx               ; Add digit to result
+
+    inc rcx                    ; Move to next character
+    jmp convert_loop           ; Repeat loop
+
+convert_done:
+    ret
+
+invalid_input:
+    ; Handle invalid input by setting RAX to 0
+    xor rax, rax
+    ret
+
+int_to_string:
+    mov rcx, 0                 ; Digit count
+    mov rbx, rax               ; Copy the integer to RBX
+
+    cmp rax, 0
+    jne int_to_string_loop
+    ; Handle zero separately
+    mov byte [rdi], '0'
+    mov rax, 1                 ; Length of the string
+    ret
+
+int_to_string_loop:
+    xor rdx, rdx               ; Clear RDX for division
+    div qword [ten]            ; Divide RAX by 10
+    add rdx, '0'               ; Convert remainder to ASCII
+    push rdx                   ; Push digit onto stack
+    inc rcx                    ; Increment digit count
+    cmp rax, 0                 ; Check if quotient is zero
+    jne int_to_string_loop     ; Continue if not zero
+
+    ; Pop digits from stack to output buffer
+    mov rsi, rcx               ; Length of the string
+    mov rax, rcx               ; Return length in RAX
+
+output_digits:
+    pop rdx                    ; Get digit from stack
+    mov [rdi], dl              ; Write digit to output buffer
+    inc rdi                    ; Move to next position
+    loop output_digits         ; Repeat for all digits
+
+    ret
+
+SECTION .data
+ten     dq 10                  ; Constant value 10
