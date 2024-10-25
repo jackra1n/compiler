@@ -42,28 +42,27 @@ returnStmt  : 'return' expr? ';';
 
 functionCallStmt : functionCall ';';
 
-exprStmt    : assignmentOrExpr ';';
-
-assignmentOrExpr
-            : ID '=' expr
-            | expr
-            ;
+exprStmt    : expr ';';
 
 functionCall : ID '(' exprList? ')';
 
 exprList    : expr (',' expr)*;
 
-expr        : ('+' | '-') expr                // Allows + or - before an expression
-            | expr ('&&' | '||') expr
-            | expr ('<' | '>' | '<=' | '>=') expr
-            | expr ('+' | '-') expr
-            | expr ('*' | '/' | '%') expr
+expr        : expr ('&&' | '||') expr               // Logical OR/AND precedence level
+            | expr ('<' | '>' | '<=' | '>=') expr   // Relational precedence level
+            | expr ('==' | '!=') expr               // Equality precedence level
+            | expr ('+' | '-') expr                 // Additive precedence level
+            | expr ('*' | '/' | '%') expr           // Multiplicative precedence level
+            | ('+' | '-' | '!') expr                // Unary prefix operators (+, -, !)
             | ('++' | '--') expr
             | expr ('++' | '--')
-            | '(' expr ')'
-            | ID
+            | '(' expr ')'                          // Parenthesized expressions
+            | functionCall
             | NUMBER
             | STRING_LITERAL
+            | 'true'
+            | 'false'
+            | ID
             ;
 
 ID          : [a-zA-Z][a-zA-Z0-9]*;
