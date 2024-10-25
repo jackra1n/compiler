@@ -24,6 +24,7 @@ stmt        : varDeclStmt
             | ifStmt
             | whileStmt
             | returnStmt
+            | functionCallStmt
             | exprStmt
             | block
             | ';'
@@ -39,10 +40,21 @@ whileStmt   : 'while' '(' expr ')' stmt;
 
 returnStmt  : 'return' expr? ';';
 
-exprStmt    : expr ';';
+functionCallStmt : functionCall ';';
 
-expr        : expr ('&&' | '||') expr
-            | expr ('==' | '!=') expr
+exprStmt    : assignmentOrExpr ';';
+
+assignmentOrExpr
+            : ID '=' expr
+            | expr
+            ;
+
+functionCall : ID '(' exprList? ')';
+
+exprList    : expr (',' expr)*;
+
+expr        : ('+' | '-') expr                // Allows + or - before an expression
+            | expr ('&&' | '||') expr
             | expr ('<' | '>' | '<=' | '>=') expr
             | expr ('+' | '-') expr
             | expr ('*' | '/' | '%') expr
