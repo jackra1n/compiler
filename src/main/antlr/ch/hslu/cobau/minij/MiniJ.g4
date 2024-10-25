@@ -14,7 +14,7 @@ globalDecl
     ;
 
 function
-    : 'fun' ID '(' paramList? ')' (':' type)? block
+    : 'fun' ID '(' paramList? ')' (':' type)? block SEMI?
     ;
 
 paramList
@@ -158,11 +158,10 @@ incDecExpr
     ;
 
 // Lexer Rules
-ID: [a-zA-Z][a-zA-Z0-9]*;
+ID : [a-zA-Z_$][a-zA-Z0-9_$]*;
 NUMBER: [0-9]+;
 STRING_LITERAL: '"' .*? '"';
 WS: [ \t\r\n]+ -> skip;
-COMMENT: '//' ~[\r\n]* -> skip;
 
 // Keywords
 LPAREN: '(';
@@ -173,3 +172,5 @@ SEMI: ';';
 COLON: ':';
 COMMA: ',';
 ASSIGN: '=';
+MULTI_LINE_COMMENT: '/*' .*? '*/' -> skip;
+SINGLE_LINE_COMMENT: '//' ~[\r\n]* -> skip;
