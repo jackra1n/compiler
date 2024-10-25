@@ -6,15 +6,23 @@ package ch.hslu.cobau.minij;
 
 // milestone 2: parser
 unit
-    : globalDecl* function* EOF
+    : (globalDecl | structDecl | function)* EOF
     ;
 
 globalDecl
     : ID ':' type ';'
     ;
 
+structDecl
+    : 'struct' ID '{' structMember* '}'
+    ;
+
+structMember
+    : ID ':' type ';'
+    ;
+
 function
-    : 'fun' ID '(' paramList? ')' (':' type)? functionBlock SEMI?
+    : 'fun' ID '(' paramList? ')' (':' type)? functionBody SEMI?
     ;
 
 paramList
@@ -22,14 +30,19 @@ paramList
     ;
 
 param
-    : ID ':' type
+    : OUT? ID ':' type
     ;
+
 
 type
-    : 'integer' | 'string' | 'boolean'
+    : baseType ('[' ']')*
     ;
 
-functionBlock
+baseType
+    : 'integer' | 'string' | 'boolean' | ID
+    ;
+
+functionBody
     : '{' (varDeclStmt | stmt)* '}'
     ;
 
@@ -53,7 +66,11 @@ varDeclStmt
     ;
 
 assignStmt
-    : ID '=' expr ';'
+    : lhs '=' expr ';'
+    ;
+
+lhs
+    : postfixExpr
     ;
 
 ifStmt
@@ -72,60 +89,53 @@ functionCallStmt
     : functionCall ';'
     ;
 
-incDecStmt
-    : incDecExpr ';'
-    ;
-
 functionCall
-    : ID '(' exprList? ')'
+    : primaryExpr functionCallOp postfixSuffix
     ;
 
-exprList
-    : expr (',' expr)*
+incDecStmt
+    : lhs ('++' | '--') ';'
+    | ('++' | '--') lhs ';'
     ;
 
 expr
-    : logicalOrExpr
+    : assignmentExpr
+    ;
+
+assignmentExpr
+    : lhs '=' assignmentExpr
+    | logicalOrExpr
     ;
 
 logicalOrExpr
-    : logicalOrExpr '||' logicalAndExpr
-    | logicalAndExpr
+    : logicalAndExpr ('||' logicalAndExpr)*
     ;
 
 logicalAndExpr
-    : logicalAndExpr '&&' equalityExpr
-    | equalityExpr
+    : equalityExpr ('&&' equalityExpr)*
     ;
 
 equalityExpr
-    : equalityExpr ('==' | '!=') relationalExpr
-    | relationalExpr
+    : relationalExpr (('==' | '!=') relationalExpr)*
     ;
 
 relationalExpr
-    : relationalExpr ('<' | '>' | '<=' | '>=') additiveExpr
-    | additiveExpr
+    : additiveExpr (('<' | '>' | '<=' | '>=') additiveExpr)*
     ;
 
 additiveExpr
-    : additiveExpr ('+' | '-') multiplicativeExpr
-    | multiplicativeExpr
+    : multiplicativeExpr (('+' | '-') multiplicativeExpr)*
     ;
 
 multiplicativeExpr
-    : multiplicativeExpr ('*' | '/' | '%') unaryExpr
-    | unaryExpr
+    : unaryExpr (('*' | '/' | '%') unaryExpr)*
     ;
 
 unaryExpr
-    : preIncDecExpr
+    : preIncDecOperator+ unaryExpr
     | unaryOperator unaryExpr
     | postfixExpr
-    ;
-
-preIncDecExpr
-    : preIncDecOperator+ unaryExpr
+    | functionCall
     ;
 
 preIncDecOperator
@@ -133,21 +143,35 @@ preIncDecOperator
     ;
 
 unaryOperator
-    : '+' | '-'
-    | '!'
+    : '+' | '-' | '!'
     ;
 
 postfixExpr
-    : primaryExpr postIncDecOperator?
+    : primaryExpr postfixSuffix
+    ;
+
+postfixSuffix
+    : (memberAccessOp | arrayAccessOp)* postIncDecOperator?
     ;
 
 postIncDecOperator
     : '++' | '--'
     ;
 
+functionCallOp
+    : '(' exprList? ')'
+    ;
+
+memberAccessOp
+    : ('.' | '->') ID
+    ;
+
+arrayAccessOp
+    : '[' expr ']'
+    ;
+
 primaryExpr
     : '(' expr ')'
-    | functionCall
     | NUMBER
     | STRING_LITERAL
     | 'true'
@@ -155,12 +179,12 @@ primaryExpr
     | ID
     ;
 
-incDecExpr
-    : ('++' | '--') ID
-    | ID ('++' | '--')
+exprList
+    : expr (',' expr)*
     ;
 
 // Lexer Rules
+OUT : 'out';
 ID : [a-zA-Z_$][a-zA-Z0-9_$]*;
 NUMBER: [0-9]+;
 STRING_LITERAL: '"' .*? '"';
