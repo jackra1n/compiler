@@ -14,7 +14,7 @@ globalDecl
     ;
 
 function
-    : 'fun' ID '(' paramList? ')' (':' type)? block SEMI?
+    : 'fun' ID '(' paramList? ')' (':' type)? functionBlock SEMI?
     ;
 
 paramList
@@ -29,13 +29,16 @@ type
     : 'integer' | 'string' | 'boolean'
     ;
 
+functionBlock
+    : '{' (varDeclStmt | stmt)* '}'
+    ;
+
 block
     : '{' stmt* '}'
     ;
 
 stmt
-    : varDeclStmt
-    | assignStmt
+    : assignStmt
     | ifStmt
     | whileStmt
     | returnStmt
