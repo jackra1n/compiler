@@ -411,57 +411,61 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         setType(expr, resultType);
     }
 
-//    @Override
-//    public void visit(FieldAccess fieldAccess) {
-//        fieldAccess.getExpression().accept(this);
-//        Type exprType = getType(fieldAccess.getExpression());
-//
-//        if (exprType instanceof RecordType) {
-//            RecordType recordType = (RecordType) exprType;
-//            Struct struct = structs.get(recordType.getName());
-//            if (struct == null) {
-//                semanticError("Undefined struct type: " + recordType.getName());
-//                setType(fieldAccess, new VoidType());
-//            } else {
-//                Declaration fieldDecl = null;
-//                for (Declaration field : struct.getDeclarations()) {
-//                    if (field.getIdentifier().equals(fieldAccess.getIdentifier())) {
-//                        fieldDecl = field;
-//                        break;
-//                    }
-//                }
-//                if (fieldDecl == null) {
-//                    semanticError("Field '" + fieldAccess.getIdentifier() + "' not found in struct '"
-//                            + recordType.getName() + "'");
-//                    setType(fieldAccess, new VoidType());
-//                } else {
-//                    setType(fieldAccess, fieldDecl.getType());
-//                }
-//            }
-//        } else {
-//            semanticError("Type '" + exprType + "' is not a struct");
-//            setType(fieldAccess, new VoidType());
-//        }
-//    }
-//
-//    @Override
-//    public void visit(ArrayAccess arrayAccess) {
-//        arrayAccess.getArray().accept(this);
-//        arrayAccess.getIndex().accept(this);
-//
-//        Type arrayType = getType(arrayAccess.getArray());
-//        Type indexType = getType(arrayAccess.getIndex());
-//
-//        if (!(arrayType instanceof ArrayType)) {
-//            semanticError("Type '" + arrayType + "' is not an array");
-//            setType(arrayAccess, new VoidType());
-//        } else if (!(indexType instanceof IntegerType)) {
-//            semanticError("Array index must be of type integer");
-//            setType(arrayAccess, new VoidType());
-//        } else {
-//            setType(arrayAccess, ((ArrayType) arrayType).getElementType());
-//        }
-//    }
+    @Override
+    public void visit(FieldAccess fieldAccess) {
+        // Visit the base expression
+        fieldAccess.getBase().accept(this);
+        Type baseType = getType(fieldAccess.getBase());
+
+        if (baseType instanceof RecordType) {
+            RecordType recordType = (RecordType) baseType;
+            Struct struct = structs.get(recordType.getIdentifier());
+            if (struct == null) {
+                semanticError("Undefined struct type: " + recordType.getIdentifier());
+                setType(fieldAccess, new VoidType());
+            } else {
+                Declaration fieldDecl = null;
+                for (Declaration field : struct.getDeclarations()) {
+                    if (field.getIdentifier().equals(fieldAccess.getField())) {
+                        fieldDecl = field;
+                        break;
+                    }
+                }
+                if (fieldDecl == null) {
+                    semanticError("Field '" + fieldAccess.getField() + "' not found in struct '"
+                            + recordType.getIdentifier() + "'");
+                    setType(fieldAccess, new VoidType());
+                } else {
+                    setType(fieldAccess, fieldDecl.getType());
+                }
+            }
+        } else {
+            semanticError("Type '" + baseType + "' is not a struct");
+            setType(fieldAccess, new VoidType());
+        }
+    }
+
+    @Override
+    public void visit(ArrayAccess arrayAccess) {
+        // Visit the base array expression and the index expression
+        arrayAccess.getBase().accept(this);
+        arrayAccess.getIndexExpression().accept(this);
+
+        Type baseType = getType(arrayAccess.getBase());
+        Type indexType = getType(arrayAccess.getIndexExpression());
+
+        if (!(baseType instanceof ArrayType)) {
+            semanticError("Type '" + baseType + "' is not an array");
+            setType(arrayAccess, new VoidType());
+        } else if (!(indexType instanceof IntegerType)) {
+            semanticError("Array index must be of type integer");
+            setType(arrayAccess, new VoidType());
+        } else {
+            // Set the type of the array access to the element type
+            Type elementType = ((ArrayType) baseType).getType();
+            setType(arrayAccess, elementType);
+        }
+    }
 
     @Override
     public void visit(IfStatement ifStmt) {
