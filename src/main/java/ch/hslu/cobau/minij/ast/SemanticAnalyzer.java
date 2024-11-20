@@ -51,10 +51,8 @@ public class SemanticAnalyzer extends BaseAstVisitor {
 
     private Type getType(Expression expr) {
         Type type = expressionTypes.get(expr);
-        if (type == null) {
-            return new VoidType(); // Return VoidType to prevent null pointers
-        }
-        return type;
+        // Return VoidType to prevent null pointers
+        return Objects.requireNonNullElseGet(type, VoidType::new);
     }
 
     // Lookup variable in scopes
@@ -306,7 +304,7 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         UnaryOperator op = expr.getUnaryOperator();
 
         // Check operator applicability and determine result type
-        Type resultType = null;
+        Type resultType;
         if (op == UnaryOperator.NOT) {
             if (operandType instanceof BooleanType) {
                 resultType = new BooleanType();
@@ -347,66 +345,41 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         BinaryOperator op = expr.getBinaryOperator();
 
         // Check operator applicability and determine result type
-        Type resultType = null;
+        Type resultType;
 
         if (leftType.equals(rightType)) {
-            if (leftType instanceof IntegerType) {
-                switch (op) {
-                    case PLUS:
-                    case MINUS:
-                    case TIMES:
-                    case DIV:
-                    case MOD:
-                        resultType = new IntegerType();
-                        break;
-                    case EQUAL:
-                    case UNEQUAL:
-                    case LESSER:
-                    case LESSER_EQ:
-                    case GREATER:
-                    case GREATER_EQ:
-                        resultType = new BooleanType();
-                        break;
-                    default:
+            switch (leftType) {
+                case IntegerType integerType -> resultType = switch (op) {
+                    case PLUS, MINUS, TIMES, DIV, MOD -> new IntegerType();
+                    case EQUAL, UNEQUAL, LESSER, LESSER_EQ, GREATER, GREATER_EQ -> new BooleanType();
+                    default -> {
                         semanticError("Operator '" + op + "' not applicable to type " + leftType);
-                        resultType = new VoidType();
-                }
-            } else if (leftType instanceof BooleanType) {
-                switch (op) {
-                    case AND:
-                    case OR:
-                        resultType = new BooleanType();
-                        break;
-                    case EQUAL:
-                    case UNEQUAL:
-                        resultType = new BooleanType();
-                        break;
-                    default:
+                        yield new VoidType();
+                    }
+                };
+                case BooleanType booleanType -> resultType = switch (op) {
+                    case AND, OR, EQUAL, UNEQUAL -> new BooleanType();
+                    default -> {
                         semanticError("Operator '" + op + "' not applicable to type " + leftType);
-                        resultType = new VoidType();
-                }
-            } else if (leftType instanceof StringType) {
-                switch (op) {
-                    case PLUS:
+                        yield new VoidType();
+                    }
+                };
+                case StringType stringType -> resultType = switch (op) {
+                    case PLUS ->
                         // Assuming string concatenation
-                        resultType = new StringType();
-                        break;
-                    case EQUAL:
-                    case UNEQUAL:
-                    case LESSER:
-                    case LESSER_EQ:
-                    case GREATER:
-                    case GREATER_EQ:
+                            new StringType();
+                    case EQUAL, UNEQUAL, LESSER, LESSER_EQ, GREATER, GREATER_EQ ->
                         // Relational comparisons are acceptable for strings
-                        resultType = new BooleanType();
-                        break;
-                    default:
+                            new BooleanType();
+                    default -> {
                         semanticError("Operator '" + op + "' not applicable to type " + leftType);
-                        resultType = new VoidType();
+                        yield new VoidType();
+                    }
+                };
+                default -> {
+                    semanticError("Operator '" + op + "' not applicable to type " + leftType);
+                    resultType = new VoidType();
                 }
-            } else {
-                semanticError("Operator '" + op + "' not applicable to type " + leftType);
-                resultType = new VoidType();
             }
         } else {
             semanticError("Type mismatch in binary expression: " + leftType + " and " + rightType);
@@ -422,8 +395,7 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         fieldAccess.getBase().accept(this);
         Type baseType = getType(fieldAccess.getBase());
 
-        if (baseType instanceof RecordType) {
-            RecordType recordType = (RecordType) baseType;
+        if (baseType instanceof RecordType recordType) {
             Struct struct = structs.get(recordType.getIdentifier());
             if (struct == null) {
                 semanticError("Undefined struct type: " + recordType.getIdentifier());
@@ -565,37 +537,32 @@ public class SemanticAnalyzer extends BaseAstVisitor {
 
     // Helper method to get built-in functions
     private Function getBuiltInFunction(String name) {
-        switch (name) {
-            case "writeInt":
-                return new Function(
-                        "writeInt",
-                        new VoidType(),
-                        Collections.singletonList(new Declaration("i", new IntegerType(), false)),
-                        Collections.emptyList()
-                );
-            case "readInt":
-                return new Function(
-                        "readInt",
-                        new IntegerType(),
-                        Collections.emptyList(),
-                        Collections.emptyList()
-                );
-            case "writeChar":
-                return new Function(
-                        "writeChar",
-                        new VoidType(),
-                        Collections.singletonList(new Declaration("c", new IntegerType(), false)),
-                        Collections.emptyList()
-                );
-            case "readChar":
-                return new Function(
-                        "readChar",
-                        new IntegerType(),
-                        Collections.emptyList(),
-                        Collections.emptyList()
-                );
-            default:
-                return null;
-        }
+        return switch (name) {
+            case "writeInt" -> new Function(
+                    "writeInt",
+                    new VoidType(),
+                    Collections.singletonList(new Declaration("i", new IntegerType(), false)),
+                    Collections.emptyList()
+            );
+            case "readInt" -> new Function(
+                    "readInt",
+                    new IntegerType(),
+                    Collections.emptyList(),
+                    Collections.emptyList()
+            );
+            case "writeChar" -> new Function(
+                    "writeChar",
+                    new VoidType(),
+                    Collections.singletonList(new Declaration("c", new IntegerType(), false)),
+                    Collections.emptyList()
+            );
+            case "readChar" -> new Function(
+                    "readChar",
+                    new IntegerType(),
+                    Collections.emptyList(),
+                    Collections.emptyList()
+            );
+            default -> null;
+        };
     }
 }
