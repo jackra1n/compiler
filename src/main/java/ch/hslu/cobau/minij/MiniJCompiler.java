@@ -1,5 +1,8 @@
 package ch.hslu.cobau.minij;
 
+import ch.hslu.cobau.minij.ast.AstBuilder;
+import ch.hslu.cobau.minij.ast.SemanticAnalyzer;
+import ch.hslu.cobau.minij.ast.entity.Unit;
 import org.antlr.v4.runtime.*;
 
 import java.io.IOException;
@@ -38,10 +41,15 @@ public class MiniJCompiler {
 
         // start parsing at outermost level (milestone 2)
         MiniJParser.UnitContext unitContext = miniJParser.unit();
+        AstBuilder astBuilder = new AstBuilder();
+        astBuilder.visit(unitContext);
+        Unit unit = astBuilder.getUnit();
 
         // semantic check (milestone 3)
+        SemanticAnalyzer semanticAnalyzer = new SemanticAnalyzer();
+        boolean isValid = semanticAnalyzer.analyze(unit);
         // code generation (milestone 4)
-        
-        System.exit(errorListener.hasErrors() ? 1 : 0);
+
+        System.exit((errorListener.hasErrors() || !isValid) ? 1 : 0);
     }
 }
