@@ -10,7 +10,7 @@ import ch.hslu.cobau.minij.ast.type.*;
 import java.util.*;
 
 public class SemanticAnalyzer extends BaseAstVisitor {
-    // Global symbol table for functions, globals, and structs
+    // Global symbol tables for functions, globals, and structs
     private final Map<String, Declaration> globalVariables = new HashMap<>();
     private final Map<String, Function> functions = new HashMap<>();
     private final Map<String, Struct> structs = new HashMap<>();
@@ -21,12 +21,15 @@ public class SemanticAnalyzer extends BaseAstVisitor {
     // Current function being analyzed
     private Function currentFunction = null;
 
+    // Map to store types of expressions
+    private final Map<Expression, Type> expressionTypes = new HashMap<>();
+
     // List to collect semantic errors
     private final List<String> errors = new ArrayList<>();
 
     public boolean analyze(Unit unit) {
         // Start analysis by visiting the unit
-        visit(unit);
+        unit.accept(this);
         // Return true if no errors were found
         return errors.isEmpty();
     }
@@ -36,25 +39,76 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         System.err.println("Semantic Error: " + message);
     }
 
-    // Other methods to access errors, if needed
+    // Method to access errors if needed
     public List<String> getErrors() {
         return errors;
     }
 
+    // Helper methods for types
+    private void setType(Expression expr, Type type) {
+        expressionTypes.put(expr, type);
+    }
+
+    private Type getType(Expression expr) {
+        Type type = expressionTypes.get(expr);
+        if (type == null) {
+            return new VoidType(); // Return VoidType to prevent null pointers
+        }
+        return type;
+    }
+
+    // Lookup variable in scopes
+    private Declaration lookupVariable(String name) {
+        // Iterate scopes from innermost to outermost
+        Iterator<Map<String, Declaration>> it = scopes.descendingIterator();
+        while (it.hasNext()) {
+            Map<String, Declaration> scope = it.next();
+            if (scope.containsKey(name)) {
+                return scope.get(name);
+            }
+        }
+        // Then check global variables
+        return globalVariables.get(name);
+    }
+
+    // Check if expression is assignable
+    private boolean isAssignable(Expression expr) {
+        return expr instanceof VariableAccess || expr instanceof FieldAccess || expr instanceof ArrayAccess;
+    }
+
+    // Check if types are compatible
+    private boolean typesAreCompatible(Type expected, Type actual) {
+        if (expected instanceof VoidType || actual instanceof VoidType) {
+            // If either type is VoidType, they are not compatible
+            return false;
+        }
+        return expected.equals(actual);
+    }
+
     // Visitor methods
+
     @Override
     public void visit(Unit unit) {
-        // Visit structs first to ensure they are available when needed
+        // Process structs first
         for (Struct struct : unit.getStructs()) {
             struct.accept(this);
         }
 
-        // Visit global variable declarations
+        // Process global variable declarations directly
         for (Declaration global : unit.getGlobals()) {
-            global.accept(this);
+            String name = global.getIdentifier();
+            Type type = global.getType();
+
+            if (globalVariables.containsKey(name)) {
+                semanticError("Duplicate global variable declaration: " + name);
+            } else if (type instanceof VoidType) {
+                semanticError("Global variable '" + name + "' cannot be of type void");
+            } else {
+                globalVariables.put(name, global);
+            }
         }
 
-        // Visit function declarations
+        // Process functions
         for (Function function : unit.getFunctions()) {
             function.accept(this);
         }
@@ -66,42 +120,18 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         if (structs.containsKey(name)) {
             semanticError("Duplicate struct declaration: " + name);
         } else {
-            // Check for duplicate field names within the struct
+            structs.put(name, struct);
+            // Check for duplicate field names and void types
             Set<String> fieldNames = new HashSet<>();
             for (Declaration field : struct.getDeclarations()) {
                 String fieldName = field.getIdentifier();
+                Type fieldType = field.getType();
                 if (!fieldNames.add(fieldName)) {
                     semanticError("Duplicate field name '" + fieldName + "' in struct '" + name + "'");
-                } else if (field.getType() instanceof VoidType) {
+                } else if (fieldType instanceof VoidType) {
                     semanticError("Struct field '" + fieldName + "' cannot be of type void");
                 }
-            }
-            structs.put(name, struct);
-        }
-    }
-
-    @Override
-    public void visit(Declaration declaration) {
-        String name = declaration.getIdentifier();
-        Type type = declaration.getType();
-        if (currentFunction == null) {
-            // Global variable declaration
-            if (globalVariables.containsKey(name)) {
-                semanticError("Duplicate global variable declaration: " + name);
-            } else if (type instanceof VoidType) {
-                semanticError("Global variable '" + name + "' cannot be of type void");
-            } else {
-                globalVariables.put(name, declaration);
-            }
-        } else {
-            // Local variable declaration
-            Map<String, Declaration> currentScope = scopes.peek();
-            if (currentScope.containsKey(name)) {
-                semanticError("Duplicate local variable declaration: " + name);
-            } else if (type instanceof VoidType) {
-                semanticError("Local variable '" + name + "' cannot be of type void");
-            } else {
-                currentScope.put(name, declaration);
+                // Optionally, check if field types are valid (e.g., struct types are defined)
             }
         }
     }
@@ -127,24 +157,28 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         functions.put(name, function);
 
         // Start a new scope for the function
-        scopes.push(new HashMap<>());
+        Map<String, Declaration> functionScope = new HashMap<>();
+        scopes.push(functionScope);
         currentFunction = function;
 
         // Add formal parameters to the scope
         Set<String> parameterNames = new HashSet<>();
         for (Declaration param : function.getFormalParameters()) {
             String paramName = param.getIdentifier();
+            Type paramType = param.getType();
             if (!parameterNames.add(paramName)) {
                 semanticError("Duplicate parameter name '" + paramName + "' in function '" + name + "'");
-            } else if (param.getType() instanceof VoidType) {
+            } else if (paramType instanceof VoidType) {
                 semanticError("Function parameter '" + paramName + "' cannot be of type void");
             } else {
-                scopes.peek().put(paramName, param);
+                functionScope.put(paramName, param);
             }
         }
 
         // Visit the function body (statements)
-        function.visitChildren(this);
+        for (Statement stmt : function.getStatements()) {
+            stmt.accept(this);
+        }
 
         // Clean up
         scopes.pop();
@@ -153,32 +187,41 @@ public class SemanticAnalyzer extends BaseAstVisitor {
 
     @Override
     public void visit(DeclarationStatement declarationStmt) {
-        // Visit the declaration within the statement
-        declarationStmt.getDeclaration().accept(this);
+        Declaration declaration = declarationStmt.getDeclaration();
+        String name = declaration.getIdentifier();
+        Type type = declaration.getType();
+
+        Map<String, Declaration> currentScope = scopes.peek();
+        if (currentScope.containsKey(name)) {
+            semanticError("Duplicate local variable declaration: " + name);
+        } else if (type instanceof VoidType) {
+            semanticError("Local variable '" + name + "' cannot be of type void");
+        } else {
+            currentScope.put(name, declaration);
+        }
     }
 
     @Override
     public void visit(AssignmentStatement assignment) {
-        // Visit the left-hand side and right-hand side expressions
+        // Visit left and right expressions
         assignment.getLeft().accept(this);
         assignment.getRight().accept(this);
 
-        // Get the types of the left and right expressions
+        // Get types
         Type leftType = getType(assignment.getLeft());
         Type rightType = getType(assignment.getRight());
 
-        // Check if the left expression is assignable
+        // Check if left is assignable
         if (!isAssignable(assignment.getLeft())) {
             semanticError("Left-hand side of assignment must be a variable, field access, or array access");
             return;
         }
 
-        // Check if the types are compatible
+        // Check types
         if (!typesAreCompatible(leftType, rightType)) {
             semanticError("Type mismatch in assignment: cannot assign " + rightType + " to " + leftType);
         }
     }
-
 
     @Override
     public void visit(VariableAccess varAccess) {
@@ -186,10 +229,30 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         Declaration declaration = lookupVariable(name);
         if (declaration == null) {
             semanticError("Undefined variable: " + name);
-            varAccess.setType(new VoidType()); // Set to void to avoid cascading errors
+            setType(varAccess, new VoidType()); // Set to void to prevent cascading errors
         } else {
-            varAccess.setType(declaration.getType());
+            setType(varAccess, declaration.getType());
         }
+    }
+
+    @Override
+    public void visit(IntegerConstant intConst) {
+        setType(intConst, new IntegerType());
+    }
+
+    @Override
+    public void visit(StringConstant strConst) {
+        setType(strConst, new StringType());
+    }
+
+    @Override
+    public void visit(TrueConstant trueConst) {
+        setType(trueConst, new BooleanType());
+    }
+
+    @Override
+    public void visit(FalseConstant falseConst) {
+        setType(falseConst, new BooleanType());
     }
 
     @Override
@@ -203,31 +266,28 @@ public class SemanticAnalyzer extends BaseAstVisitor {
             function = getBuiltInFunction(functionName);
             if (function == null) {
                 semanticError("Undefined function: " + functionName);
-                setType(callExpr, new VoidType()); // Set to void to prevent cascading errors
+                setType(callExpr, new VoidType());
                 return;
             }
         }
 
-        // Visit all actual parameters
-        List<Expression> arguments = callExpr.getParameters();
-        for (Expression arg : arguments) {
+        // Visit all arguments
+        for (Expression arg : callExpr.getParameters()) {
             arg.accept(this);
         }
 
-        // Get the formal parameters
-        List<Declaration> formalParameters = function.getFormalParameters();
-
-        // Check the number of parameters
-        if (arguments.size() != formalParameters.size()) {
-            semanticError("Function '" + functionName + "' expects " + formalParameters.size()
-                    + " arguments but got " + arguments.size());
+        // Check parameter count
+        int argCount = callExpr.getParameters().size();
+        int paramCount = function.getFormalParameters().size();
+        if (argCount != paramCount) {
+            semanticError("Function '" + functionName + "' expects " + paramCount + " arguments but got " + argCount);
         }
 
-        // Check the types of parameters
-        int numParams = Math.min(arguments.size(), formalParameters.size());
-        for (int i = 0; i < numParams; i++) {
-            Type argType = getType(arguments.get(i));
-            Type paramType = formalParameters.get(i).getType();
+        // Check parameter types
+        int count = Math.min(argCount, paramCount);
+        for (int i = 0; i < count; i++) {
+            Type argType = getType(callExpr.getParameters().get(i));
+            Type paramType = function.getFormalParameters().get(i).getType();
 
             if (!typesAreCompatible(paramType, argType)) {
                 semanticError("Type mismatch for parameter " + (i + 1) + " in call to '" + functionName
@@ -235,65 +295,287 @@ public class SemanticAnalyzer extends BaseAstVisitor {
             }
         }
 
-        // Set the type of the call expression to the function's return type
+        // Set type of call expression to function's return type
         setType(callExpr, function.getReturnType());
     }
 
-    // Helper methods
-    private final Map<Expression, Type> expressionTypes = new HashMap<>();
+    @Override
+    public void visit(UnaryExpression expr) {
+        expr.getExpression().accept(this);
+        Type operandType = getType(expr.getExpression());
+        UnaryOperator op = expr.getUnaryOperator();
 
-    // Methods to get and set expression types
-    private void setType(Expression expr, Type type) {
-        expressionTypes.put(expr, type);
-    }
-
-    private Type getType(Expression expr) {
-        Type type = expressionTypes.get(expr);
-        if (type == null) {
-            // If the type is not set, we can return a special type or handle it accordingly
-            // For now, we'll return a VoidType to prevent null pointers
-            return new VoidType();
+        // Check operator applicability and determine result type
+        Type resultType = null;
+        if (op == UnaryOperator.NOT) {
+            if (operandType instanceof BooleanType) {
+                resultType = new BooleanType();
+            } else {
+                semanticError("Operator '!' not applicable to type " + operandType);
+                resultType = new VoidType();
+            }
+        } else if (op == UnaryOperator.MINUS) {
+            if (operandType instanceof IntegerType) {
+                resultType = new IntegerType();
+            } else {
+                semanticError("Operator '" + op + "' not applicable to type " + operandType);
+                resultType = new VoidType();
+            }
+        } else if (op == UnaryOperator.PRE_INCREMENT || op == UnaryOperator.PRE_DECREMENT
+                || op == UnaryOperator.POST_INCREMENT || op == UnaryOperator.POST_DECREMENT) {
+            if (operandType instanceof IntegerType && isAssignable(expr.getExpression())) {
+                resultType = new IntegerType();
+            } else {
+                semanticError("Operator '" + op + "' not applicable to type " + operandType);
+                resultType = new VoidType();
+            }
+        } else {
+            semanticError("Unknown unary operator: " + op);
+            resultType = new VoidType();
         }
-        return type;
+
+        setType(expr, resultType);
     }
 
+    @Override
+    public void visit(BinaryExpression expr) {
+        expr.getLeft().accept(this);
+        expr.getRight().accept(this);
 
-    private Declaration lookupVariable(String name) {
-        // Check local scopes first
-        for (Map<String, Declaration> scope : scopes) {
-            if (scope.containsKey(name)) {
-                return scope.get(name);
+        Type leftType = getType(expr.getLeft());
+        Type rightType = getType(expr.getRight());
+        BinaryOperator op = expr.getBinaryOperator();
+
+        // Check operator applicability and determine result type
+        Type resultType = null;
+
+        if (leftType.equals(rightType)) {
+            if (leftType instanceof IntegerType) {
+                switch (op) {
+                    case PLUS:
+                    case MINUS:
+                    case TIMES:
+                    case DIV:
+                    case MOD:
+                        resultType = new IntegerType();
+                        break;
+                    case EQUAL:
+                    case UNEQUAL:
+                    case LESSER:
+                    case LESSER_EQ:
+                    case GREATER:
+                    case GREATER_EQ:
+                        resultType = new BooleanType();
+                        break;
+                    default:
+                        semanticError("Operator '" + op + "' not applicable to type " + leftType);
+                        resultType = new VoidType();
+                }
+            } else if (leftType instanceof BooleanType) {
+                switch (op) {
+                    case AND:
+                    case OR:
+                        resultType = new BooleanType();
+                        break;
+                    case EQUAL:
+                    case UNEQUAL:
+                        resultType = new BooleanType();
+                        break;
+                    default:
+                        semanticError("Operator '" + op + "' not applicable to type " + leftType);
+                        resultType = new VoidType();
+                }
+            } else if (leftType instanceof StringType) {
+                switch (op) {
+                    case PLUS:
+                        // Assuming string concatenation
+                        resultType = new StringType();
+                        break;
+                    case EQUAL:
+                    case UNEQUAL:
+                        resultType = new BooleanType();
+                        break;
+                    default:
+                        semanticError("Operator '" + op + "' not applicable to type " + leftType);
+                        resultType = new VoidType();
+                }
+            } else {
+                semanticError("Operator '" + op + "' not applicable to type " + leftType);
+                resultType = new VoidType();
+            }
+        } else {
+            semanticError("Type mismatch in binary expression: " + leftType + " and " + rightType);
+            resultType = new VoidType();
+        }
+
+        setType(expr, resultType);
+    }
+
+//    @Override
+//    public void visit(FieldAccess fieldAccess) {
+//        fieldAccess.getExpression().accept(this);
+//        Type exprType = getType(fieldAccess.getExpression());
+//
+//        if (exprType instanceof RecordType) {
+//            RecordType recordType = (RecordType) exprType;
+//            Struct struct = structs.get(recordType.getName());
+//            if (struct == null) {
+//                semanticError("Undefined struct type: " + recordType.getName());
+//                setType(fieldAccess, new VoidType());
+//            } else {
+//                Declaration fieldDecl = null;
+//                for (Declaration field : struct.getDeclarations()) {
+//                    if (field.getIdentifier().equals(fieldAccess.getIdentifier())) {
+//                        fieldDecl = field;
+//                        break;
+//                    }
+//                }
+//                if (fieldDecl == null) {
+//                    semanticError("Field '" + fieldAccess.getIdentifier() + "' not found in struct '"
+//                            + recordType.getName() + "'");
+//                    setType(fieldAccess, new VoidType());
+//                } else {
+//                    setType(fieldAccess, fieldDecl.getType());
+//                }
+//            }
+//        } else {
+//            semanticError("Type '" + exprType + "' is not a struct");
+//            setType(fieldAccess, new VoidType());
+//        }
+//    }
+//
+//    @Override
+//    public void visit(ArrayAccess arrayAccess) {
+//        arrayAccess.getArray().accept(this);
+//        arrayAccess.getIndex().accept(this);
+//
+//        Type arrayType = getType(arrayAccess.getArray());
+//        Type indexType = getType(arrayAccess.getIndex());
+//
+//        if (!(arrayType instanceof ArrayType)) {
+//            semanticError("Type '" + arrayType + "' is not an array");
+//            setType(arrayAccess, new VoidType());
+//        } else if (!(indexType instanceof IntegerType)) {
+//            semanticError("Array index must be of type integer");
+//            setType(arrayAccess, new VoidType());
+//        } else {
+//            setType(arrayAccess, ((ArrayType) arrayType).getElementType());
+//        }
+//    }
+
+    @Override
+    public void visit(IfStatement ifStmt) {
+        ifStmt.getExpression().accept(this);
+        Type condType = getType(ifStmt.getExpression());
+
+        if (!(condType instanceof BooleanType)) {
+            semanticError("Condition in if statement must be of type boolean");
+        }
+
+        // Visit then statements
+        for (Statement stmt : ifStmt.getStatements()) {
+            stmt.accept(this);
+        }
+
+        // Visit else clause if present
+        if (ifStmt.getElseBlock() != null) {
+            for (Statement stmt : ifStmt.getElseBlock().getStatements()) {
+                stmt.accept(this);
             }
         }
-        // Then global variables
-        return globalVariables.get(name);
     }
 
-    private boolean isAssignable(Expression expr) {
-        return expr instanceof VariableAccess || expr instanceof FieldAccess || expr instanceof ArrayAccess;
+    @Override
+    public void visit(WhileStatement whileStmt) {
+        whileStmt.getExpression().accept(this);
+        Type condType = getType(whileStmt.getExpression());
+
+        if (!(condType instanceof BooleanType)) {
+            semanticError("Condition in while statement must be of type boolean");
+        }
+
+        // Visit body statements
+        for (Statement stmt : whileStmt.getStatements()) {
+            stmt.accept(this);
+        }
     }
 
+    @Override
+    public void visit(ReturnStatement returnStmt) {
+        if (currentFunction == null) {
+            semanticError("Return statement outside of a function");
+            return;
+        }
 
-    private boolean typesAreCompatible(Type expected, Type actual) {
-        // Implement type compatibility logic
-        // For simplicity, we'll use equals method
-        return expected.equals(actual);
+        Type expectedType = currentFunction.getReturnType();
+        Expression expr = returnStmt.getExpression();
+
+        if (expr != null) {
+            expr.accept(this);
+            Type actualType = getType(expr);
+
+            if (expectedType instanceof VoidType) {
+                semanticError("Return statement with a value in a void function");
+            } else if (!typesAreCompatible(expectedType, actualType)) {
+                semanticError("Type mismatch in return statement: expected " + expectedType + ", got " + actualType);
+            }
+        } else {
+            if (!(expectedType instanceof VoidType)) {
+                semanticError("Return statement missing a value in function returning " + expectedType);
+            }
+        }
     }
 
+    @Override
+    public void visit(Block block) {
+        // Start a new scope
+        Map<String, Declaration> blockScope = new HashMap<>();
+        scopes.push(blockScope);
+
+        // Visit statements
+        for (Statement stmt : block.getStatements()) {
+            stmt.accept(this);
+        }
+
+        // End scope
+        scopes.pop();
+    }
+
+    // Implement other necessary visit methods
+
+    // Helper method to get built-in functions
     private Function getBuiltInFunction(String name) {
-        // Return the built-in function if it exists
         switch (name) {
             case "writeInt":
-                return new Function("writeInt", new VoidType(), Collections.singletonList(new Declaration("i", new IntegerType(), false)), null);
+                return new Function(
+                        "writeInt",
+                        new VoidType(),
+                        Collections.singletonList(new Declaration("i", new IntegerType(), false)),
+                        Collections.emptyList()
+                );
             case "readInt":
-                return new Function("readInt", new IntegerType(), Collections.emptyList(), null);
+                return new Function(
+                        "readInt",
+                        new IntegerType(),
+                        Collections.emptyList(),
+                        Collections.emptyList()
+                );
             case "writeChar":
-                return new Function("writeChar", new VoidType(), Collections.singletonList(new Declaration("c", new IntegerType(), false)), null);
+                return new Function(
+                        "writeChar",
+                        new VoidType(),
+                        Collections.singletonList(new Declaration("c", new IntegerType(), false)),
+                        Collections.emptyList()
+                );
             case "readChar":
-                return new Function("readChar", new IntegerType(), Collections.emptyList(), null);
+                return new Function(
+                        "readChar",
+                        new IntegerType(),
+                        Collections.emptyList(),
+                        Collections.emptyList()
+                );
             default:
                 return null;
         }
     }
-
 }
