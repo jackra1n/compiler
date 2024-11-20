@@ -1,10 +1,8 @@
 package ch.hslu.cobau.minij.ast;
 
 import ch.hslu.cobau.minij.ast.constants.IntegerConstant;
-import ch.hslu.cobau.minij.ast.entity.Declaration;
-import ch.hslu.cobau.minij.ast.entity.Function;
-import ch.hslu.cobau.minij.ast.entity.Struct;
-import ch.hslu.cobau.minij.ast.entity.Unit;
+import ch.hslu.cobau.minij.ast.constants.*;
+import ch.hslu.cobau.minij.ast.entity.*;
 import ch.hslu.cobau.minij.ast.expression.*;
 import ch.hslu.cobau.minij.ast.statement.*;
 import ch.hslu.cobau.minij.ast.type.*;
@@ -240,63 +238,6 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         // Set the type of the call expression to the function's return type
         setType(callExpr, function.getReturnType());
     }
-
-//    @Override
-//    public void visit(BinaryExpression expr) {
-//        expr.getLeft().accept(this);
-//        expr.getRight().accept(this);
-//
-//        Type leftType = getType(expr.getLeft());
-//        Type rightType = getType(expr.getRight());
-//        BinaryOperator op = expr.getBinaryOperator();
-//
-//        // Check if operands are of the same type
-//        if (!leftType.equals(rightType)) {
-//            semanticError("Type mismatch in binary expression: " + leftType + " and " + rightType);
-//            setType(expr, new VoidType());
-//            return;
-//        }
-//
-//        // Check if the operation supports the type
-//        if (!operationSupportsType(op, leftType)) {
-//            semanticError("Operator '" + op + "' does not support type " + leftType);
-//            setType(expr, new VoidType());
-//            return;
-//        }
-//
-//        // Determine the result type
-//        Type resultType = determineResultType(op, leftType);
-//        setType(expr, resultType);
-//    }
-//
-//
-//    @Override
-//    public void visit(ReturnStatement returnStmt) {
-//        if (currentFunction == null) {
-//            semanticError("Return statement outside of a function");
-//            return;
-//        }
-//
-//        Type expectedType = currentFunction.getReturnType();
-//        Expression expr = returnStmt.getExpression();
-//
-//        if (expr != null) {
-//            expr.accept(this);
-//            Type actualType = expr.getType();
-//
-//            if (expectedType instanceof VoidType) {
-//                semanticError("Return statement with a value in a void function");
-//            } else if (!typesAreCompatible(expectedType, actualType)) {
-//                semanticError("Type mismatch in return statement: expected " + expectedType + ", got " + actualType);
-//            }
-//        } else {
-//            if (!(expectedType instanceof VoidType)) {
-//                semanticError("Return statement missing a value in function returning " + expectedType);
-//            }
-//        }
-//    }
-
-
 
     // Helper methods
     private final Map<Expression, Type> expressionTypes = new HashMap<>();
