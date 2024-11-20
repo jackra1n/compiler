@@ -101,8 +101,8 @@ public class SemanticAnalyzer extends BaseAstVisitor {
 
             if (globalVariables.containsKey(name)) {
                 semanticError("Duplicate global variable declaration: " + name);
-            } else if (type instanceof VoidType) {
-                semanticError("Global variable '" + name + "' cannot be of type void");
+            } else if (!isValidType(type)) {
+                semanticError("Global variable '" + name + "' has invalid or undefined type: " + type);
             } else {
                 globalVariables.put(name, global);
             }
@@ -121,17 +121,17 @@ public class SemanticAnalyzer extends BaseAstVisitor {
             semanticError("Duplicate struct declaration: " + name);
         } else {
             structs.put(name, struct);
-            // Check for duplicate field names and void types
+            // Check for duplicate field names and invalid types
             Set<String> fieldNames = new HashSet<>();
             for (Declaration field : struct.getDeclarations()) {
                 String fieldName = field.getIdentifier();
                 Type fieldType = field.getType();
                 if (!fieldNames.add(fieldName)) {
                     semanticError("Duplicate field name '" + fieldName + "' in struct '" + name + "'");
-                } else if (fieldType instanceof VoidType) {
-                    semanticError("Struct field '" + fieldName + "' cannot be of type void");
+                } else if (!isValidType(fieldType)) {
+                    semanticError("Struct field '" + fieldName + "' has invalid or undefined type: " + fieldType);
                 }
-                // Optionally, check if field types are valid (e.g., struct types are defined)
+                // No need to add to scope here
             }
         }
     }
@@ -194,8 +194,8 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         Map<String, Declaration> currentScope = scopes.peek();
         if (currentScope.containsKey(name)) {
             semanticError("Duplicate local variable declaration: " + name);
-        } else if (type instanceof VoidType) {
-            semanticError("Local variable '" + name + "' cannot be of type void");
+        } else if (!isValidType(type)) {
+            semanticError("Local variable '" + name + "' has invalid or undefined type: " + type);
         } else {
             currentScope.put(name, declaration);
         }
@@ -393,6 +393,11 @@ public class SemanticAnalyzer extends BaseAstVisitor {
                         break;
                     case EQUAL:
                     case UNEQUAL:
+                    case LESSER:
+                    case LESSER_EQ:
+                    case GREATER:
+                    case GREATER_EQ:
+                        // Relational comparisons are acceptable for strings
                         resultType = new BooleanType();
                         break;
                     default:
@@ -545,7 +550,18 @@ public class SemanticAnalyzer extends BaseAstVisitor {
         scopes.pop();
     }
 
-    // Implement other necessary visit methods
+    private boolean isValidType(Type type) {
+        if (type instanceof IntegerType || type instanceof BooleanType || type instanceof StringType) {
+            return true;
+        } else if (type instanceof ArrayType) {
+            return isValidType(((ArrayType) type).getType());
+        } else if (type instanceof RecordType) {
+            String typeName = ((RecordType) type).getIdentifier();
+            return structs.containsKey(typeName);
+        } else {
+            return false;
+        }
+    }
 
     // Helper method to get built-in functions
     private Function getBuiltInFunction(String name) {
